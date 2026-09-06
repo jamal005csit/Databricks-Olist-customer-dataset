@@ -40,28 +40,43 @@ olist-medallion/
 
 ```mermaid
 flowchart TD
-    CSV[CSV Upload (DBFS)] --> Bronze
+    CSV[CSV Upload DBFS] --> Bronze
 
-    subgraph Bronze [BRONZE LAYER]
-        B_Desc[Raw data, no transformations. Audit columns added.]
-        B_Table[(Table: olist.bronze_customers)]
+    subgraph Bronze["BRONZE LAYER"]
+        B_Desc["Raw data, no transformations. Audit columns added."]
+        B_Table["Table: olist.bronze_customers"]
     end
 
     Bronze --> Silver
 
-    subgraph Silver [SILVER LAYER]
-        S_Desc[Cleaned, typed, normalised, deduplicated.]
-        S_Table[(Table: olist.silver_customers)]
+    subgraph Silver["SILVER LAYER"]
+        S_Desc["Cleaned, typed, normalised, deduplicated."]
+        S_Table["Table: olist.silver_customers"]
     end
 
     Silver --> Gold
 
-    subgraph Gold [GOLD LAYER]
-        G_Desc[Business aggregations ready for reporting.]
-        G_Table[(Tables: gold_customers_by_state<br/>gold_customers_by_city<br/>gold_customers_by_zip)]
+    subgraph Gold["GOLD LAYER"]
+        G_Desc["Business aggregations ready for reporting."]
+        G_Table1["Table: gold_customers_by_state"]
+        G_Table2["Table: gold_customers_by_city"]
+        G_Table3["Table: gold_customers_by_zip"]
     end
 
-    Gold --> PBI[Power BI <br/> Databricks Connector]
+    Gold --> PBI["Power BI with Databricks Connector"]
+```
+## Simplified Version
+
+```mermaid
+flowchart LR
+    CSV["CSV Upload"] --> Bronze["Bronze Layer"]
+    Bronze --> Silver["Silver Layer"]
+    Silver --> Gold["Gold Layer"]
+    Gold --> PBI["Power BI"]
+
+    Bronze --- B_Table["olist.bronze_customers"]
+    Silver --- S_Table["olist.silver_customers"]
+    Gold --- G_Tables["gold_customers_by_state<br/>gold_customers_by_city<br/>gold_customers_by_zip"]
 ```
 
 ---
