@@ -31,38 +31,37 @@ olist-medallion/
 | `customer_city` | string | Customer city name |
 | `customer_state` | string | Brazilian state abbreviation (e.g. SP, RJ) |
 
-**Source:** [Olist Brazilian E-Commerce Dataset](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce)
+**Source:** [Olist Brazilian E-Commerce Dataset](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce)  
 **Size:** ~99,441 rows
 
 ---
 
 ## Architecture Overview
 
-```
-CSV Upload (DBFS)
-      │
-      ▼
-┌─────────────┐
-│   BRONZE    │  Raw data, no transformations. Audit columns added.
-│             │  Table: olist.bronze_customers
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│   SILVER    │  Cleaned, typed, normalised, deduplicated.
-│             │  Table: olist.silver_customers
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│    GOLD     │  Business aggregations ready for reporting.
-│             │  Tables: gold_customers_by_state
-│             │           gold_customers_by_city
-│             │           gold_customers_by_zip
-└──────┬──────┘
-       │
-       ▼
-  Power BI (Databricks Connector)
+```mermaid
+flowchart TD
+    CSV[CSV Upload (DBFS)] --> Bronze
+
+    subgraph Bronze [BRONZE LAYER]
+        B_Desc[Raw data, no transformations. Audit columns added.]
+        B_Table[(Table: olist.bronze_customers)]
+    end
+
+    Bronze --> Silver
+
+    subgraph Silver [SILVER LAYER]
+        S_Desc[Cleaned, typed, normalised, deduplicated.]
+        S_Table[(Table: olist.silver_customers)]
+    end
+
+    Silver --> Gold
+
+    subgraph Gold [GOLD LAYER]
+        G_Desc[Business aggregations ready for reporting.]
+        G_Table[(Tables: gold_customers_by_state<br/>gold_customers_by_city<br/>gold_customers_by_zip)]
+    end
+
+    Gold --> PBI[Power BI <br/> Databricks Connector]
 ```
 
 ---
@@ -74,6 +73,7 @@ CSV Upload (DBFS)
 **Goal:** Land the source data into Delta Lake exactly as-is. Never modify source columns at this layer.
 
 **What it does:**
+
 - Reads the CSV from DBFS (`/FileStore/tables/olist_customers_dataset.csv`)
 - Adds two audit columns: `_ingested_at` (timestamp) and `_source_file` (filename)
 - Writes to `olist.bronze_customers` as a managed Delta table
@@ -89,7 +89,7 @@ CSV Upload (DBFS)
 **What was handled:**
 
 | Problem | How it was fixed |
-|---|---|
+| --- | --- |
 | `customer_zip_code_prefix` stored as string | Cast to `IntegerType()` |
 | City names with inconsistent casing (`"São Paulo"`, `"sao paulo"`, `"SAO PAULO"`) | `F.lower(F.trim(...))` applied to `customer_city` |
 | State names with inconsistent casing | `F.upper(F.trim(...))` applied to `customer_state` |
@@ -108,10 +108,11 @@ A `_cleaned_at` audit timestamp is added. The difference in row count between Br
 **What was handled / built:**
 
 **Table 1 — `gold_customers_by_state`**
+
 Answers: *How many customers does each state have? What's the repeat purchase rate?*
 
 | Column | Description |
-|---|---|
+| --- | --- |
 | `customer_state` | State abbreviation |
 | `total_customers` | Count of all customer records |
 | `unique_customers` | Count of distinct `customer_unique_id` (person-level) |
@@ -119,20 +120,22 @@ Answers: *How many customers does each state have? What's the repeat purchase ra
 | `repeat_customer_rate` | `1 - (unique / total)` — proportion of repeat buyers |
 
 **Table 2 — `gold_customers_by_city`**
+
 Answers: *Which cities drive the most customers, broken down by state?*
 
 | Column | Description |
-|---|---|
+| --- | --- |
 | `customer_state` | State abbreviation |
 | `customer_city` | Normalised city name |
 | `total_customers` | Customer count in that city |
 | `unique_customers` | Distinct person-level count |
 
 **Table 3 — `gold_customers_by_zip`**
+
 Answers: *Where are customers geographically concentrated? (for map visuals)*
 
 | Column | Description |
-|---|---|
+| --- | --- |
 | `customer_zip_code_prefix` | 5-digit ZIP prefix |
 | `customer_state` | State |
 | `total_customers` | Customer count in that ZIP zone |
@@ -142,6 +145,7 @@ Answers: *Where are customers geographically concentrated? (for map visuals)*
 ## How to Run
 
 ### Prerequisites
+
 - Databricks account (free tier works)
 - Cluster running (Runtime 12+ / Spark 3.3+)
 - CSV uploaded to DBFS: `Data > Add Data > Upload File`
