@@ -277,7 +277,7 @@ spark.sql("CREATE DATABASE IF NOT EXISTS olist")
 
 ### Dashboard Preview
 
-![Power BI Dashboard](./assets/dashboard-preview.png)
+![Power BI Dashboard](./PowerBi_olist.png)
 
 ---
 
