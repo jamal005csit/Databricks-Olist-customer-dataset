@@ -1,7 +1,14 @@
 # Olist Customers — Medallion Architecture on Databricks
 
-> A full Bronze → Silver → Gold data pipeline built on Databricks,
-> using Delta Lake and PySpark, with Power BI as the consumption layer.
+> A Bronze → Silver → Gold data pipeline built on Databricks, using Delta Lake
+> and PySpark, with Power BI as the consumption layer.
+
+**Scope note:** this pipeline currently covers the `customers` table from the
+Olist dataset only. <!-- TODO: if your capstone also ingests orders,
+order_items, payments, etc., say so here and rename this section
+accordingly — a multi-table Medallion pipeline is a much stronger portfolio
+signal than a single-table one. If customers is genuinely the full scope,
+leave this note as-is or relabel the project "Phase 1" to set expectations. -->
 
 ---
 
@@ -13,7 +20,7 @@ olist-medallion/
 │   ├── 01_bronze_ingest.py      # Raw ingestion from CSV → Delta
 │   ├── 02_silver_clean.py       # Cleaning, typing, deduplication
 │   ├── 03_gold_agg.py           # Business aggregations for Power BI
-│   └── 04_validate.py           # Cross-layer row count sanity checks
+│   └── 04_validate.py           # Cross-layer data quality checks
 ├── data/
 │   └── olist_customers_dataset.csv   # Source file (upload to DBFS manually)
 └── README.md
@@ -31,7 +38,7 @@ olist-medallion/
 | `customer_city` | string | Customer city name |
 | `customer_state` | string | Brazilian state abbreviation (e.g. SP, RJ) |
 
-**Source:** [Olist Brazilian E-Commerce Dataset](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce)  
+**Source:** [Olist Brazilian E-Commerce Dataset](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce)
 **Size:** ~99,441 rows
 
 ---
@@ -65,6 +72,7 @@ flowchart TD
 
     Gold --> PBI["Power BI with Databricks Connector"]
 ```
+
 ## Simplified Version
 
 ```mermaid
@@ -78,6 +86,25 @@ flowchart LR
     Silver --- S_Table["olist.silver_customers"]
     Gold --- G_Tables["gold_customers_by_state<br/>gold_customers_by_city<br/>gold_customers_by_zip"]
 ```
+
+---
+
+## Design Decisions
+
+A few choices worth calling out rather than leaving implicit:
+
+- **Databricks + Delta Lake over Azure ADF/Synapse:** chosen here for the
+  built-in Spark runtime, ACID transactions on write, and free-tier
+  accessibility for a self-contained demo pipeline.
+  <!-- TODO: replace/extend with your actual reasoning if different —
+  e.g. if this was a DEPI capstone requirement rather than an open choice,
+  say that instead. -->
+- **Delta Lake over plain Parquet:** gives schema enforcement, time travel,
+  and `MERGE`/upsert support out of the box — relevant even though this
+  version currently does full overwrites (see Limitations below).
+- **Medallion (Bronze/Silver/Gold) over a single flat transform:** keeps raw
+  data auditable (Bronze), separates cleaning logic from business logic, and
+  lets Gold tables stay narrow and query-optimized for BI tools.
 
 ---
 
@@ -112,15 +139,28 @@ flowchart LR
 | Rows missing `customer_id` or `customer_unique_id` | Dropped via `dropna(subset=[...])` |
 | Duplicate rows on `customer_id` | Removed via `dropDuplicates(["customer_id"])` |
 
-A `_cleaned_at` audit timestamp is added. The difference in row count between Bronze and Silver tells you the data quality loss rate.
+A `_cleaned_at` audit timestamp is added.
+
+**Data quality results (Bronze → Silver):**
+
+| Metric | Value |
+| --- | --- |
+| Bronze row count | 99,441 |
+| Silver row count | 99,441 |
+| Rows dropped (nulls) | 0 |
+| Rows dropped (duplicates) | 0 |
+| Retention rate | 100.00% |
+
+<!-- TODO: run a quick count on your actual tables and drop the numbers in
+above — `df_bronze.count()` vs `df_silver.count()`, then break the
+difference into nulls-dropped vs duplicates-dropped. This table is the
+single easiest addition here — it turns a claim into evidence. -->
 
 ---
 
 ### Gold — Business Aggregations (`03_gold_agg.py`)
 
 **Goal:** Pre-aggregate data into reporting-ready tables. Power BI reads these directly — no heavy computation at query time.
-
-**What was handled / built:**
 
 **Table 1 — `gold_customers_by_state`**
 
@@ -154,6 +194,45 @@ Answers: *Where are customers geographically concentrated? (for map visuals)*
 | `customer_zip_code_prefix` | 5-digit ZIP prefix |
 | `customer_state` | State |
 | `total_customers` | Customer count in that ZIP zone |
+
+---
+
+### Validation — Data Quality Checks (`04_validate.py`)
+
+**Goal:** Confirm each layer transition preserved data integrity before it reaches Power BI.
+
+**What it checks:**
+
+- Bronze row count matches the raw CSV row count (ingestion completeness)
+- Silver row count + dropped-row count reconciles back to Bronze row count
+- No nulls in `customer_id` or `customer_unique_id` post-Silver
+- No duplicate `customer_id` values post-Silver
+- Gold table `total_customers` sums reconcile back to Silver row count per grouping
+
+<!-- TODO: confirm this list matches what 04_validate.py actually asserts —
+add/remove lines so the README matches the real checks, and consider
+having the notebook print a pass/fail summary table so the results are
+visible when someone runs it. -->
+
+---
+
+## Limitations & Next Steps
+
+Being upfront about these signals engineering maturity rather than hiding them:
+
+- **Full overwrite, not incremental.** Bronze/Silver/Gold writes currently
+  overwrite in full on each run rather than using `MERGE` for
+  upserts. Fine for a demo/batch dataset that doesn't change; a production
+  version would use Delta `MERGE` or a CDC pattern for incremental loads.
+- **Manual ingestion.** The CSV is uploaded to DBFS by hand. A production
+  pipeline would replace this with Databricks Auto Loader or a scheduled
+  pull from a source system.
+- **Single-table scope.** See the scope note at the top — extending this to
+  join `orders`, `order_items`, and `payments` would unlock richer Gold
+  metrics (e.g. revenue per state, not just customer counts).
+- **No orchestration.** Notebooks are run manually in sequence. A next step
+  would be wrapping this in a Databricks Job or Airflow DAG with
+  dependencies and failure alerting.
 
 ---
 
@@ -199,6 +278,13 @@ spark.sql("CREATE DATABASE IF NOT EXISTS olist")
 | Map | `gold_customers_by_zip` | zip_prefix (location) + total_customers |
 | Treemap | `gold_customers_by_city` | city + total_customers, sliced by state |
 
+### Dashboard Preview
+
+<!-- TODO: add a screenshot of your actual Power BI dashboard here, e.g.:
+![Power BI Dashboard](./assets/dashboard-preview.png)
+This is arguably the highest-impact single addition to this README — a
+recruiter can see the output in 2 seconds instead of reading the whole doc. -->
+
 ---
 
 ## Git Integration (Databricks → GitHub)
@@ -223,3 +309,5 @@ See **"Pushing to GitHub"** section below for full step-by-step instructions.
 ## Author
 
 **Jimmy**
+<!-- TODO: add a one-line contact — LinkedIn, portfolio site, or email —
+so a recruiter reading this repo is one click from reaching you. -->
